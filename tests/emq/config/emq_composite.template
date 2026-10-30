@@ -41,7 +41,6 @@ record(bo, "$(P)output_$(CH):SP") {
   field(DESC, "Turn the unit's output on/off")
   field(ZNAM, "off")
   field(ONAM, "on")
-  field(MDEL, "-1")
   field(ASG,  "$(ASG)")
 }
 

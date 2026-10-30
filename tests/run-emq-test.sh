@@ -11,6 +11,7 @@ out=$($docker run --rm --security-opt=label=disable -v "${THIS}/emq/config:/epic
     "${TAG}" bash -c '${IOC}/start.sh' 2>&1 < /dev/null) || true
 echo "${out}" | grep -E 'DBF_|emqComposite|^seq|Error|error' || true
 check() { if ! echo "${out}" | grep -q -- "$1"; then echo "MISSING: $1"; exit 1; fi; }
+if echo "${out}" | grep -q 'ERROR'; then echo "ERROR in the IOC's output (a record that did not load?)"; exit 1; fi
 check 'emqComposite'
 check '"polarity neg, -1.000 A"'
 check '"refused: -10.500 A outside +-10"'
