@@ -37,10 +37,13 @@ record(ao, "$(P)current_limit_$(CH):SP") {
 # The operator's explicit output request. The program never turns an output
 # on by itself (a sign change leaves an output that was off off, and an abort
 # turns it off); this is how the operator turns it on, or off.
-record(bo, "$(P)output_$(CH):SP") {
-  field(DESC, "Turn the unit's output on/off")
-  field(ZNAM, "off")
-  field(ONAM, "on")
+# A longout, not a bo: a bo posts no monitor when the same value is put again,
+# and the program would never see a second "on". 1 = on, 0 = off.
+record(longout, "$(P)output_$(CH):SP") {
+  field(DESC, "Turn the unit's output on (1) / off (0)")
+  field(DRVL, "0")
+  field(DRVH, "1")
+  field(MDEL, "-1")
   field(ASG,  "$(ASG)")
 }
 
