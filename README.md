@@ -34,11 +34,17 @@ No vendor code is inside, so the image is published. CI builds on every
 push. On a git tag (CalVer `YYYY.M.N`, never re-pushed) it pushes
 `ghcr.io/geecs-bella/ioc-supplies-runtime:<tag>` and
 `ghcr.io/geecs-bella/ioc-supplies-developer:<tag>`. A pre-release tag
-(`2026.10.1b1`) publishes a branch for bench work.
+(`2026.10.1b4`) publishes a branch for bench work.
 
-The repository is private and its packages inherit that visibility, so a
-host pulls only with credentials, or loads an image saved from a machine
-that has them.
+CI runs the template's test, and then `tests/run-emq-test.sh`. That test
+starts the IOC with the composite's records, local stand-ins for the unit
+and the relay, and one `emqComposite` instance. It checks that a flip ends
+"polarity neg" and that an out-of-range put is refused.
+
+The repository is public. The ghcr package was created while the repository
+was private, and it keeps its own visibility until that is changed in the
+organisation's package settings. Until then a host cannot pull anonymously,
+and bench proofs load a build of the tagged commit with `docker load`.
 
 For development only, a local build:
 
@@ -46,6 +52,15 @@ For development only, a local build:
 
 ibek-support is pinned to `8545fa2`, the commit the base image was built
 with.
+
+The image creates the user `emq_composite` (uid/gid 1990). The EMQ
+composite's container runs as it, so that its CA links write under a name
+no other container has. The image's default user stays root.
+
+`ibek runtime generate2` removes and recreates `/epics/runtime`, so that user
+owns `/epics` itself (not recursively) and `/epics/runtime`. Inside its own
+container it could therefore rename entries of `/epics`. The container holds
+nothing else of value, and the composite's config is mounted read-only.
 
 ## emqComposite
 
@@ -55,27 +70,58 @@ The program `emqComposite` runs once per magnet, after iocInit:
 
 It sequences the composite's records, which belong to the instance
 (geecs-epics `services/undulator/supplies/emqtest1/config/`): the signed
-setpoint, `busy`, `state`, `message`, `reset` and the named values.
+setpoint, the output request, `busy`, `state`, `message`, `reset` and the
+named values.
 
-A put with the relay's present polarity, or 0 A, sets the unit's current
-directly (`{SUP}current_limit_{CH}:SP`). A put with the other sign runs the
-sequence:
-1. Set the unit to 0 A.
-2. Wait for |I| below the threshold, held for the hold time.
-3. Turn the output off, and wait for it to read off.
-4. With the output off, wait for |I| below the threshold, held again.
-5. Write the coil (`{PLC}do_ch{COIL}:SP`), and wait for its readback.
-6. Turn the output on, and wait for it to read on.
-7. Set |value|.
+**Trusted readbacks.** The unit's current, its output and the relay's coil
+count only while they are connected and below MAJOR severity. A decision or
+a wait that meets an untrusted one aborts.
 
-**Aborts.** Any failed write, timeout or mismatch turns the output off, and
-the channel latches until `reset`:
-- `state` goes to `aborted` (MAJOR);
-- `busy` goes to 1;
-- `message` says why.
+**A setpoint put** is refused by the program if `|value|` exceeds `imax`
+(the record has no output link, so its alarm alone stops nothing).
+- **Same polarity, or 0 A:** the program sets the unit's current directly,
+  but only while the unit's output is on. An output that is off stays off
+  until the operator turns it on with `output_CH:SP`, the explicit intent.
+- **The other sign:** the program runs the polarity sequence.
+  1. Set the unit to 0 A.
+  2. Wait for |I| below the threshold, held for the hold time.
+  3. Turn the output off, and wait for it to read off. This step is skipped
+     if the output was off already.
+  4. With the output off, wait for |I| below the threshold, held again.
+  5. Write the coil (`{PLC}do_ch{COIL}:SP`), and wait for its readback.
+  6. Wait the contact settle time. The coil bit is the PLC's register, not
+     the contact.
+  7. Turn the output back on, and wait for it to read on. **Only if it was
+     on before the sequence.**
+  8. Set |value|, and wait until the unit's programmed current reads it.
 
-The instance's access security refuses setpoint puts while `busy` is 1, so
-the program never sees a put during a sequence.
+**Aborts.** Any failed write, timeout, mismatch or untrusted readback turns
+the output off. The relay is never written again. The channel then latches:
+- `state` goes to `aborted` (MAJOR), and `busy` to 1;
+- `message` says why;
+- the output is read back. Until it reads off, the program retries the
+  off every 2 s and says "OFF NOT CONFIRMED".
+
+An abort while current still flows (for example "I did not fall") turns the
+output off under load. That is the specified behaviour, and it is the
+inductive-kick case in the maintainer's open flyback question.
+
+**Reset.** A reset is taken only in `aborted`, only if it was made after the
+abort (its event flag is cleared on abort entry), and only once the output
+reads off. A reset that arrives in any other state is consumed and does
+nothing. The instance's access security refuses it anyway unless the state
+is `aborted`.
+
+**Relay watch.** While the program is idle, and before the coil write, a coil
+readback that changes or stops being trusted aborts with the output off.
+That catches a relay moved by anyone else: a PLC reboot, NI's
+shared-variable engine, a spoofing client. It cannot prevent the hot switch,
+only limit it.
+
+**Puts during a sequence.** `busy` goes to 1 as the put is taken. The
+instance's access security refuses setpoint and output puts while `busy` is
+1. A put that slips into the instant before is dropped when the sequence
+ends, not queued.
 
 **At start**, every channel is latched ("restarted: reset to resume") and
 nothing is written. A restart mid-sequence resumes nothing:
@@ -86,11 +132,17 @@ nothing is written. A restart mid-sequence resumes nothing:
 **Timeouts** are measured with the clock, not `delay()`, because `delay()`
 restarts on a self-transition. The waiting states poll every 0.1 s.
 
+**Three instances, one chain.** The instance runs one program per magnet, and
+nothing serialises them. Three can sequence at once on the units' shared
+9600-baud chain. Each write waits at most the protocols' lock timeout (5 s)
+for the line, and the composite's output timeout (15 s) is above it.
+
 **Links.** Every PV is a CA channel. `option -c` starts the program without
-waiting for them to connect, and a sequence aborts at its start if the coil,
-output or current readback is disconnected. The writes go out under the
-IOC's process user, which is the name emqtest1-ps (`EMQ_PS_WRITER`) and
-plctest1 (`PLC1_EMQ_COMPOSITE`) must grant.
+waiting for them to connect. The writes go out under the IOC's process user,
+`emq_composite`, from the loopback, which is what emqtest1-ps
+(`EMQ_PS_WRITER`, ASG `SUPPLY_LOCAL`) and plctest1 (`PLC1_EMQ_COMPOSITE`,
+ASG `EMQ_COMPOSITE`, both with a loopback HAG under `asCheckClientIP`)
+grant.
 
 ## Licence
 
@@ -106,6 +158,9 @@ licences.
 ## Template Info
 
 This repository was generated by
-[ioc-template](https://github.com/epics-containers/ioc-template) 4.8.0
+[ioc-template](https://github.com/epics-containers/ioc-template) 4.8.0. The
+first commit is the generator's files, untouched. Its `.gitmodules` and the
+ibek-support submodule, which copier's task would add, arrive with the next
+commit, pinned
 (`copier update -a --trust .` to update). The devcontainer and `./build`
 work as in every epics-containers generic IOC.

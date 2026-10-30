@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=/epics/ibek-defs/ioc.schema.json
+#
+# CI's run of emqComposite (tests/run-emq-test.sh): the composite's records
+# (copies of geecs-epics emqtest1's), local stand-ins for the unit and the
+# relay, and one program instance. After iocInit the script resets, turns the
+# output on, sets +1 A, flips to -1 A, and prints the state, message and coil.
+# Short holds, so it runs in seconds.
+ioc_name: emqtest
+description: emqComposite in CI, on local stand-ins
+
+entities:
+  - type: epics.StartupCommand
+    command: |
+      dbLoadRecords("/epics/ioc/config/standins.db")
+      dbLoadRecords("/epics/ioc/config/emq_named_values.db", "P=T:C:,ZERO_THRESHOLD_A=0.05,ZERO_HOLD_S=0.3,ZERO_TIMEOUT_S=5,OUTPUT_TIMEOUT_S=5,COIL_TIMEOUT_S=3,CONTACT_SETTLE_S=0.2,IMAX_A=10")
+      dbLoadRecords("/epics/ioc/config/emq_composite.template", "P=T:C:,CH=ch1,COIL=15,NEG=1,IMAX=10,IHIHI=10.000000001,IDRVH=11,ASG=DEFAULT,RASG=DEFAULT,SUP=T:SUP:,PLC=T:PLC:")
+
+  - type: epics.PostStartupCommand
+    command: |
+      seq emqComposite, "P=T:C:,CH=ch1,SUP=T:SUP:,PLC=T:PLC:,COIL=15"
+      epicsThreadSleep 3
+      dbpf T:C:reset_ch1 1
+      epicsThreadSleep 2
+      dbpf T:C:output_ch1:SP 1
+      epicsThreadSleep 3
+      dbpf T:C:current_limit_ch1:SP 1
+      epicsThreadSleep 3
+      dbpf T:C:current_limit_ch1:SP -1
+      epicsThreadSleep 8
+      dbgf T:C:state_ch1
+      dbgf T:C:message_ch1
+      dbgf T:PLC:do_ch15
+      dbgf T:SUP:current_limit_ch1
+      dbgf T:SUP:enable_output_ch1
+      dbpf T:C:current_limit_ch1:SP -10.5
+      epicsThreadSleep 2
+      dbgf T:C:message_ch1
+      dbgf T:PLC:do_ch15
+      seqShow

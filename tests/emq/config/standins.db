@@ -1,0 +1,17 @@
+# Stand-ins for the unit (emqtest1-ps) and the relay (plctest1), in the same
+# IOC, so CI can run emqComposite without either. The unit's measured current
+# is its programmed current while its output is on, else 0. Every record has
+# PINI, as the real readbacks do, so none starts UDF (INVALID): the program
+# trusts no INVALID readback.
+record(ao, "T:SUP:current_limit_ch1:SP") { field(PINI, "YES") field(FLNK, "T:SUP:current_limit_ch1") }
+record(ai, "T:SUP:current_limit_ch1") { field(INP, "T:SUP:current_limit_ch1:SP NPP") field(PINI, "YES") field(FLNK, "T:SUP:current_ch1") }
+record(bo, "T:SUP:enable_output_ch1:SP") { field(ZNAM, "off") field(ONAM, "on") field(PINI, "YES") field(FLNK, "T:SUP:enable_output_ch1") }
+record(bi, "T:SUP:enable_output_ch1") { field(INP, "T:SUP:enable_output_ch1:SP NPP") field(ZNAM, "off") field(ONAM, "on") field(PINI, "YES") field(FLNK, "T:SUP:current_ch1") }
+record(calc, "T:SUP:current_ch1") {
+  field(INPA, "T:SUP:current_limit_ch1 NPP")
+  field(INPB, "T:SUP:enable_output_ch1 NPP")
+  field(CALC, "B?A:0")
+  field(SCAN, "1 second")
+}
+record(bo, "T:PLC:do_ch15:SP") { field(ZNAM, "off") field(ONAM, "on") field(PINI, "YES") field(FLNK, "T:PLC:do_ch15") }
+record(bi, "T:PLC:do_ch15") { field(INP, "T:PLC:do_ch15:SP NPP") field(ZNAM, "off") field(ONAM, "on") field(PINI, "YES") }
