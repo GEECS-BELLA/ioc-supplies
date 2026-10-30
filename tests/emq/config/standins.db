@@ -15,3 +15,6 @@ record(calc, "T:SUP:current_ch1") {
 }
 record(bo, "T:PLC:do_ch15:SP") { field(ZNAM, "off") field(ONAM, "on") field(PINI, "YES") field(FLNK, "T:PLC:do_ch15") }
 record(bi, "T:PLC:do_ch15") { field(INP, "T:PLC:do_ch15:SP NPP") field(ZNAM, "off") field(ONAM, "on") field(PINI, "YES") }
+record(bi, "T:SUP:fault_ch1") { field(ZNAM, "ok") field(ONAM, "fault") field(PINI, "YES") }
+record(bi, "T:SUP:panel_off_ch1") { field(ZNAM, "no") field(ONAM, "yes") field(PINI, "YES") }
+record(bi, "T:SUP:interlock_ch1") { field(ZNAM, "ok") field(ONAM, "tripped") field(PINI, "YES") }

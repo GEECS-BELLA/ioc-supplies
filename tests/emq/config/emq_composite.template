@@ -70,6 +70,8 @@ record(mbbo, "$(P)state_$(CH)") {
   field(SVSV, "MAJOR")
   field(EIST, "settling")
   field(NIST, "output_change")
+  field(TEST, "relay_unknown")
+  field(TESV, "MAJOR")
   field(VAL,  "7")
   field(PINI, "YES")
 }

@@ -15,6 +15,12 @@ if echo "${out}" | grep -q 'ERROR'; then echo "ERROR in the IOC's output (a reco
 check 'emqComposite'
 check '"polarity neg, -1.000 A"'
 check '"refused: -10.500 A outside +-10"'
-# the coil moved once (to 1, the negative state with NEG=1) and stayed there
-echo "${out}" | grep -A0 'dbgf T:PLC:do_ch15' > /dev/null
+# after the flip the coil reads on (the negative state with NEG=1), and the
+# refused out-of-range put leaves it on: the DBF lines after the flip's message
+vals=$(echo "${out}" | grep -E '^DBF_' | awk '/polarity neg, -1.000 A/{f=1; next} f' | head -3 | tr -d ' ')
+echo "after the flip: ${vals}"
+case "${vals}" in
+  'DBF_STRING:"on"'*) ;;
+  *) echo "the coil did not read on after the flip"; exit 1 ;;
+esac
 echo "emqComposite test passed"
