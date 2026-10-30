@@ -1,8 +1,15 @@
 ARG IMAGE_EXT
 
 ARG REGISTRY=ghcr.io/epics-containers
+# Built on the StreamDevice developer image (ioc-streamdevice 2.8.26ec6): EPICS
+# base, asyn, StreamDevice, calc, sequencer, sscan, busy, autosave, std,
+# iocStats and pvlogging already built, as the upstream runtime geecs-epics'
+# plain supplies run. ibek-support is pinned to the commit that image was
+# built with (8545fa2). Our emqComposite (an SNL program) is added: the
+# upstream runtime carries libseq but no compiler, and an SNL program must be
+# linked into the IOC (README "Why ours").
 ARG RUNTIME=${REGISTRY}/epics-base${IMAGE_EXT}-runtime:7.0.10ec2
-ARG DEVELOPER=${REGISTRY}/epics-base${IMAGE_EXT}-developer:7.0.10ec2
+ARG DEVELOPER=${REGISTRY}/ioc-streamdevice${IMAGE_EXT}-developer:2.8.26ec6
 
 ##### build stage ##############################################################
 FROM  ${DEVELOPER} AS developer
@@ -10,8 +17,8 @@ FROM  ${DEVELOPER} AS developer
 # The devcontainer mounts the project root to /epics/generic-source
 # Using the same location here makes devcontainer/runtime differences transparent.
 ENV SOURCE_FOLDER=/epics/generic-source
-# connect ioc source folder to its know location
-RUN ln -s ${SOURCE_FOLDER}/ioc ${IOC}
+# (The template's `ln -s ${SOURCE_FOLDER}/ioc ${IOC}` is omitted: the
+# StreamDevice developer image already made that link, as ioc-motion's base did.)
 
 # get the current versions of pvi and ibek
 COPY requirements.txt requirements.txt
@@ -22,14 +29,13 @@ WORKDIR ${SOURCE_FOLDER}/ibek-support
 COPY ibek-support/_ansible _ansible
 ENV PATH=$PATH:${SOURCE_FOLDER}/ibek-support/_ansible
 
-COPY ibek-support/iocStats/ iocStats
-RUN ansible.sh iocStats
-
-COPY ibek-support/pvlogging/ pvlogging/
-RUN ansible.sh pvlogging
-
-COPY ibek-support/autosave/ autosave
-RUN ansible.sh autosave
+# emqComposite: the EMQ triplet's polarity sequence, an SNL program (README
+# "emqComposite"). No upstream module exists; the source is in this repository
+# (emqComposite/), copied into place before ansible.sh so the recipe builds it
+# instead of cloning (as ioc-motion's motorVelmex).
+COPY ibek-support-geecs/emqComposite/ ${SOURCE_FOLDER}/ibek-support-geecs/emqComposite/
+COPY emqComposite/ /epics/support/emqComposite/
+RUN ansible.sh emqComposite
 
 # get the ioc source and build it
 COPY ioc ${SOURCE_FOLDER}/ioc
