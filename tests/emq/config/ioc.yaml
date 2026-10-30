@@ -3,7 +3,8 @@
 # CI's run of emqComposite (tests/run-emq-test.sh): the composite's records
 # (copies of geecs-epics emqtest1's), local stand-ins for the unit and the
 # relay, and one program instance. After iocInit the script resets, turns the
-# output on, sets +1 A, flips to -1 A, and prints the state, message and coil.
+# output on, sets +1 A, flips to -1 A, and prints the state, message and coil;
+# then an out-of-range put, and a flip with the current's readback frozen.
 # Short holds, so it runs in seconds.
 ioc_name: emqtest
 description: emqComposite in CI, on local stand-ins
@@ -34,6 +35,17 @@ entities:
       dbgf T:SUP:enable_output_ch1
       dbpf T:C:current_limit_ch1:SP -10.5
       epicsThreadSleep 2
+      dbgf T:C:message_ch1
+      dbgf T:PLC:do_ch15
+      # The time-stamp branch of the read before the coil: the output off, the current's
+      # readback disabled (DISA: it stops processing, its severity stays NO_ALARM, its value
+      # 0), then a flip. The read succeeds, but the stamp is old: abort, the coil not written.
+      dbpf T:C:output_ch1:SP 0
+      epicsThreadSleep 3
+      dbpf T:SUP:current_ch1.DISA 1
+      epicsThreadSleep 4
+      dbpf T:C:current_limit_ch1:SP 1
+      epicsThreadSleep 6
       dbgf T:C:message_ch1
       dbgf T:PLC:do_ch15
       seqShow

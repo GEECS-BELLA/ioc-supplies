@@ -34,12 +34,16 @@ No vendor code is inside, so the image is published. CI builds on every
 push. On a git tag (CalVer `YYYY.M.N`, never re-pushed) it pushes
 `ghcr.io/geecs-bella/ioc-supplies-runtime:<tag>` and
 `ghcr.io/geecs-bella/ioc-supplies-developer:<tag>`. A pre-release tag
-(`2026.10.1b5`) publishes a branch for bench work.
+(`2026.10.1b6`) publishes a branch for bench work, as a GitHub
+pre-release (the workflow marks every `b` tag so).
 
 CI runs the template's test, and then `tests/run-emq-test.sh`. That test
 starts the IOC with the composite's records, local stand-ins for the unit
 and the relay, and one `emqComposite` instance. It checks that a flip ends
-"polarity neg" and that an out-of-range put is refused.
+"polarity neg", that an out-of-range put is refused, and that a flip with the
+current's readback frozen (`DISA`: no alarm, an old time stamp) aborts at the
+coil with the coil unmoved. It also fails if any abort reason in the source is
+longer than 22 characters, so every message carries its reason whole.
 
 The repository is public. The ghcr package was created while the repository
 was private, and it keeps its own visibility until that is changed in the
@@ -110,15 +114,22 @@ channel then latches:
 - `state` goes to `aborted` (MAJOR), and `busy` to 1;
 - `message` says why;
 - the output is read back. Until it reads off, the program retries the
-  off every 2 s and says "<reason>; OFF NOT CONFIRMED".
+  off every 2 s and says "<reason>; off unconfirmed". Once it reads off, the
+  message is "ABORT <reason>; off". Reasons are at most 22 characters.
 
-An abort while current still flows (for example "I did not fall") turns the
+An abort while current still flows (for example "I stuck: 0.5 A") turns the
 output off under load. That is the specified behaviour, and it is the
 inductive-kick case in the maintainer's open flyback question.
 
 **Reset.** A reset is taken only in `aborted`, only if it was made after the
 abort (its event flag is cleared on abort entry), and only once the output
-reads off. A reset that arrives in any other state is consumed and does
+reads off. It is also taken only while the relay's coil readback is trusted
+at that moment: connected, read again (`pvGet`, 2 s), and below MAJOR.
+Otherwise the message says "<reason>; reset: relay?" and the channel stays
+latched. Without this, a reset after a start with plctest1 down would take a
+guessed coil (0), and the real coil, once read, would look like a moved relay
+and abort under load. The coil's readback posts on change only, so its time
+stamp is no age, and the read itself is the check. A reset that arrives in any other state is consumed and does
 nothing. The instance's access security refuses it anyway unless the state
 is `aborted`.
 

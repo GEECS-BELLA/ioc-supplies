@@ -99,6 +99,7 @@ short  want_out;
 int    ok;            /* the last write's outcome (CA completion) */
 int    stale;         /* the fresh read before the coil write failed */
 int    off_confirmed; /* the output's state after an abort is known */
+int    coil_ok;       /* reset_check: the coil readback, read again, is trusted */
 int    retry_off;     /* 1 after an abort: retry the off until it reads off */
 double t0;            /* when this step began */
 double since;         /* when |I| first read under the threshold in this hold; < 0: not yet */
@@ -141,25 +142,42 @@ ss polarity {
         } state aborted
         when (!off_confirmed && retry_off && out_rbv == 0 && pvConnected(out_rbv) && pvSeverity(out_rbv) < pvSevrMAJOR) {
             off_confirmed = 1;
-            sprintf(msg, "ABORT %.27s; off", reason); pvPut(msg, SYNC);
+            sprintf(msg, "ABORT %.22s; off", reason); pvPut(msg, SYNC);
         } state aborted
         when (!off_confirmed && retry_off && delay(2.0)) {
             out_sp = 0; pvPut(out_sp, SYNC);
-            sprintf(msg, "%.20s; OFF NOT CONFIRMED", reason); pvPut(msg, SYNC);
+            sprintf(msg, "%.22s; off unconfirmed", reason); pvPut(msg, SYNC);
         } state aborted
         when (reset && !off_confirmed) {
             reset = 0; pvPut(reset, SYNC);
             efClear(reset_ev);
-            sprintf(msg, "%.12s; reset refused: output?", reason); pvPut(msg, SYNC);
+            sprintf(msg, "%.22s; reset: output?", reason); pvPut(msg, SYNC);
         } state aborted
         when (efTestAndClear(reset_ev) && reset) {
             reset = 0; pvPut(reset, SYNC);
+        } state reset_check
+    }
+
+    /* A reset is taken only with the relay's coil readback trusted now: connected, read again
+     * (pvGet, 2 s) and below MAJOR. Otherwise last_coil would be a guess (0 after a start with
+     * plctest1 down), and the coil's real value, once it returned, would read as a moved relay
+     * and abort under load. The coil readback posts on change only, so its time stamp is not an
+     * age: the read itself, and its severity, are the check. */
+    state reset_check {
+        entry {
+            coil_ok = pvConnected(coil_rbv) && pvGet(coil_rbv, SYNC, 2.0) == pvStatOK
+                      && pvConnected(coil_rbv) && pvSeverity(coil_rbv) < pvSevrMAJOR;
+        }
+        when (coil_ok) {
             efClear(sp_ev); efClear(out_ev);
             last_coil = coil_rbv;
             step = 0;  pvPut(step, SYNC);
             busy = 0;  pvPut(busy, SYNC);
             strcpy(msg, "reset"); pvPut(msg, SYNC);
         } state idle
+        when () {
+            sprintf(msg, "%.22s; reset: relay?", reason); pvPut(msg, SYNC);
+        } state aborted
     }
 
     state idle {
@@ -198,7 +216,7 @@ ss polarity {
             strcpy(msg, "relay readback back, unchanged"); pvPut(msg, SYNC);
         } state idle
         when (pvConnected(coil_rbv) && pvSeverity(coil_rbv) < pvSevrMAJOR && coil_rbv != last_coil) {
-            sprintf(reason, "relay moved while unknown");
+            strcpy(reason, "relay moved, unknown");
         } state abort
     }
 
@@ -303,13 +321,13 @@ ss polarity {
             strcpy(reason, "output readback lost");
         } state abort
         when (was_on && out_rbv == 0) {
-            strcpy(reason, "output turned off by another");
+            strcpy(reason, "output off by another");
         } state abort
         when (!(pvConnected(coil_rbv) && pvSeverity(coil_rbv) < pvSevrMAJOR) || coil_rbv != last_coil) {
             strcpy(reason, "relay moved or lost");
         } state abort
         when (now_s() - t0 > zero_timeout) {
-            sprintf(reason, "I did not fall: %.3g A", i_meas);
+            sprintf(reason, "I stuck: %.3g A", i_meas);
         } state abort
         when (since >= 0 && fabs(i_meas) < threshold && now_s() - since >= hold) {
             ok = 1;
@@ -330,7 +348,7 @@ ss polarity {
     }
 
     state output_off {
-        when (!ok) { strcpy(reason, "output off write failed"); } state abort
+        when (!ok) { strcpy(reason, "off write failed"); } state abort
         when (!(pvConnected(out_rbv) && pvSeverity(out_rbv) < pvSevrMAJOR)) {
             strcpy(reason, "output readback lost");
         } state abort
@@ -342,7 +360,7 @@ ss polarity {
             t0 = now_s();
             since = -1;
         } state checking
-        when (now_s() - t0 > out_timeout) { strcpy(reason, "output did not read off"); } state abort
+        when (now_s() - t0 > out_timeout) { strcpy(reason, "output not read off"); } state abort
         when (delay(0.1)) {} state output_off
     }
 
@@ -357,7 +375,7 @@ ss polarity {
             strcpy(reason, "relay moved or lost");
         } state abort
         when (now_s() - t0 > zero_timeout) {
-            sprintf(reason, "I with output off: %.3g A", i_meas);
+            sprintf(reason, "I at off: %.3g A", i_meas);
         } state abort
         when (since >= 0 && fabs(i_meas) < threshold && now_s() - since >= hold) {
             /* A fresh read of what the coil write depends on, stamped within 2.5 s. */
@@ -390,7 +408,7 @@ ss polarity {
     }
 
     state switching {
-        when (stale) { strcpy(reason, "readback not fresh before coil"); } state abort
+        when (stale) { strcpy(reason, "readback stale at coil"); } state abort
         when (!ok) { strcpy(reason, "coil write failed"); } state abort
         when (!(pvConnected(coil_rbv) && pvSeverity(coil_rbv) < pvSevrMAJOR)) {
             strcpy(reason, "relay readback lost");
@@ -421,7 +439,7 @@ ss polarity {
               && !(pvConnected(fault_rbv) && pvSeverity(fault_rbv) < pvSevrINVALID && fault_rbv == 0
                    && pvConnected(panel_rbv) && pvSeverity(panel_rbv) < pvSevrINVALID && panel_rbv == 0
                    && pvConnected(ilk_rbv) && pvSeverity(ilk_rbv) < pvSevrINVALID && ilk_rbv == 0)) {
-            strcpy(reason, "unit fault/panel/interlock");
+            strcpy(reason, "unit fault/panel/ilk");
         } state abort
         when (now_s() - t0 >= settle) {
             ok = 1;
@@ -459,7 +477,7 @@ ss polarity {
             strcpy(reason, "relay moved or lost");
         } state abort
         when (was_on && !(pvConnected(out_rbv) && pvSeverity(out_rbv) < pvSevrMAJOR && out_rbv == 1)) {
-            strcpy(reason, "output turned off by another");
+            strcpy(reason, "output off by another");
         } state abort
         when (fabs(sp_rbv - fabs(target)) < 0.0005 && pvConnected(sp_rbv) && pvSeverity(sp_rbv) < pvSevrMAJOR) {
             sprintf(msg, "polarity %s, %.3f A%s", target < 0 ? "neg" : "pos", target, was_on ? "" : ", off");
@@ -479,7 +497,7 @@ ss polarity {
             pvPut(out_sp, SYNC);
             off_confirmed = 0;
             retry_off = 1;
-            sprintf(msg, "ABORT %.33s", reason); pvPut(msg, SYNC);
+            sprintf(msg, "ABORT %.22s", reason); pvPut(msg, SYNC);
             step = 7;  pvPut(step, SYNC);
             busy = 1;  pvPut(busy, SYNC);          /* puts stay refused until reset */
         }

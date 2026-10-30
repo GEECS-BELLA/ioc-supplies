@@ -23,4 +23,14 @@ case "${vals}" in
   'DBF_STRING:"on"'*) ;;
   *) echo "the coil did not read on after the flip"; exit 1 ;;
 esac
+# the frozen readback: the flip back to +1 A aborts at the coil, and the coil stays on
+check '"ABORT readback stale at coil'
+last=$(echo "${out}" | grep -E '^DBF_' | awk '/readback stale at coil/{f=1; next} f' | head -1 | tr -d ' ')
+echo "after the stale abort: ${last}"
+[[ "${last}" == 'DBF_STRING:"on"' ]] || { echo "the coil moved on a stale readback"; exit 1; }
+# every abort reason fits the message whole: "ABORT <reason>; off" and
+# "<reason>; off unconfirmed" in 39 characters need a reason of 22 at most
+src="${THIS}/../emqComposite/emqCompositeApp/src/emqComposite.st"
+long=$(grep -oE '(strcpy|sprintf)\(reason, "[^"]*"' "${src}" | sed 's/.*, "//; s/"$//' | awk 'length($0) > 22')
+if [[ -n "${long}" ]]; then echo "abort reasons longer than 22: ${long}"; exit 1; fi
 echo "emqComposite test passed"

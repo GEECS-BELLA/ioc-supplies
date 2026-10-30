@@ -198,3 +198,5 @@ jobs:
             ibek.ioc.schema.json
             versions.json
           generate_release_notes: true
+          # a CalVer beta (2026.10.1b6) is a pre-release, never "Latest"
+          prerelease: ${{ contains(github.ref_name, 'b') }}
