@@ -34,7 +34,7 @@ No vendor code is inside, so the image is published. CI builds on every
 push. On a git tag (CalVer `YYYY.M.N`, never re-pushed) it pushes
 `ghcr.io/geecs-bella/ioc-supplies-runtime:<tag>` and
 `ghcr.io/geecs-bella/ioc-supplies-developer:<tag>`. A pre-release tag
-(`2026.10.1b4`) publishes a branch for bench work.
+(`2026.10.1b5`) publishes a branch for bench work.
 
 CI runs the template's test, and then `tests/run-emq-test.sh`. That test
 starts the IOC with the composite's records, local stand-ins for the unit
@@ -74,8 +74,12 @@ setpoint, the output request, `busy`, `state`, `message`, `reset` and the
 named values.
 
 **Trusted readbacks.** The unit's current, its output and the relay's coil
-count only while they are connected and below MAJOR severity. A decision or
-a wait that meets an untrusted one aborts.
+count only while they are connected and below MAJOR severity.
+- **Mid-sequence**, a decision or a wait that meets an untrusted one aborts.
+- **Before the coil write**, the current and the output are read again
+  (`pvGet`, 2 s). Each must be stamped within 2.5 s, trusted, under the
+  threshold and off. A readback that stopped updating without an alarm
+  cannot pass.
 
 **A setpoint put** is refused by the program if `|value|` exceeds `imax`
 (the record has no output link, so its alarm alone stops nothing).
@@ -91,16 +95,22 @@ a wait that meets an untrusted one aborts.
   5. Write the coil (`{PLC}do_ch{COIL}:SP`), and wait for its readback.
   6. Wait the contact settle time. The coil bit is the PLC's register, not
      the contact.
-  7. Turn the output back on, and wait for it to read on. **Only if it was
-     on before the sequence.**
+  7. Turn the output back on, and wait for it to read on. This happens
+     **only if it was on before the sequence**, and only if the unit shows no
+     fault, front-panel off or interlock.
   8. Set |value|, and wait until the unit's programmed current reads it.
 
-**Aborts.** Any failed write, timeout, mismatch or untrusted readback turns
-the output off. The relay is never written again. The channel then latches:
+**An off by anyone else.** If the output goes off during a sequence without
+the program (front panel, interlock), the sequence aborts. An output someone
+else turned off is never turned back on.
+
+**Aborts.** Any failed write, timeout, mismatch, or untrusted readback
+mid-sequence turns the output off. The relay is never written again. The
+channel then latches:
 - `state` goes to `aborted` (MAJOR), and `busy` to 1;
 - `message` says why;
 - the output is read back. Until it reads off, the program retries the
-  off every 2 s and says "OFF NOT CONFIRMED".
+  off every 2 s and says "<reason>; OFF NOT CONFIRMED".
 
 An abort while current still flows (for example "I did not fall") turns the
 output off under load. That is the specified behaviour, and it is the
@@ -112,11 +122,15 @@ reads off. A reset that arrives in any other state is consumed and does
 nothing. The instance's access security refuses it anyway unless the state
 is `aborted`.
 
-**Relay watch.** While the program is idle, and before the coil write, a coil
-readback that changes or stops being trusted aborts with the output off.
-That catches a relay moved by anyone else: a PLC reboot, NI's
-shared-variable engine, a spoofing client. It cannot prevent the hot switch,
-only limit it.
+**Relay watch.** A coil readback that changes aborts, with the output off:
+the relay moved, whether by a PLC reboot, NI's shared-variable engine or a
+spoofing client. It cannot prevent the hot switch, only limit it.
+
+A coil readback that is merely untrusted while idle (one failed PLC poll, or
+a plctest1 restart) does **not** touch the output. The magnet goes to
+`relay_unknown` (MAJOR, puts refused). It returns to idle when the readback
+is trusted and unchanged, and aborts if the readback comes back changed.
+Mid-sequence, an untrusted coil aborts.
 
 **Puts during a sequence.** `busy` goes to 1 as the put is taken. The
 instance's access security refuses setpoint and output puts while `busy` is
@@ -124,7 +138,8 @@ instance's access security refuses setpoint and output puts while `busy` is
 ends, not queued.
 
 **At start**, every channel is latched ("restarted: reset to resume") and
-nothing is written. A restart mid-sequence resumes nothing:
+nothing is written. A reset is accepted once the output's readback is
+trusted. A restart mid-sequence resumes nothing:
 - after step 3, the output stays off;
 - during steps 1-2, the unit is left at 0 A with its output on;
 - the relay has not moved unless step 5 completed.
