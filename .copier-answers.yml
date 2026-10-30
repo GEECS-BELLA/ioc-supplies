@@ -1,0 +1,10 @@
+# Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
+_commit: 4.8.0
+_src_path: https://github.com/epics-containers/ioc-template.git
+description: 'Generic IOC for the power-supply family: StreamDevice protocols, the
+    sequencer, and composite state machines (the EMQ triplet''s polarity sequence)'
+git_platform: github.com
+github_org: GEECS-BELLA
+name: ioc-supplies
+repo_uri: git@github.com:GEECS-BELLA/ioc-supplies.git
+rtems: false
