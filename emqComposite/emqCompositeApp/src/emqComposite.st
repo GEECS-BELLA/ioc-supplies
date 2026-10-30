@@ -95,6 +95,9 @@ ss polarity {
     }
 
     state idle {
+        when (reset) {                  /* a reset with nothing to clear: consumed, so it never */
+            reset = 0; pvPut(reset, SYNC);   /* clears a later abort by itself */
+        } state idle
         when (efTestAndClear(sp_ev)) {
             target = sp;
         } state decide
