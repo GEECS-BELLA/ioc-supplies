@@ -1,0 +1,49 @@
+# The composite's named values, all UNVERIFIED (../README.md, "Named values").
+# The SNL program monitors them. Values are set at load (emqtest1.substitutions)
+# and are read-only to every client (ASG DEFAULT): changing one is a config
+# change and an IOC restart.
+record(ao, "$(P)config:zero_threshold_a") {
+  field(DESC, "|I| below this is zero (UNVERIFIED)")
+  field(VAL,  "$(ZERO_THRESHOLD_A)")
+  field(EGU,  "A")
+  field(PREC, "3")
+  field(PINI, "YES")
+}
+record(ao, "$(P)config:zero_hold_s") {
+  field(DESC, "Zero must hold this long (UNVERIFIED)")
+  field(VAL,  "$(ZERO_HOLD_S)")
+  field(EGU,  "s")
+  field(PREC, "1")
+  field(PINI, "YES")
+}
+record(ao, "$(P)config:zero_timeout_s") {
+  field(DESC, "Abort if not zero by then")
+  field(VAL,  "$(ZERO_TIMEOUT_S)")
+  field(EGU,  "s")
+  field(PINI, "YES")
+}
+record(ao, "$(P)config:output_timeout_s") {
+  field(DESC, "Output on/off readback timeout")
+  field(VAL,  "$(OUTPUT_TIMEOUT_S)")
+  field(EGU,  "s")
+  field(PINI, "YES")
+}
+record(ao, "$(P)config:coil_timeout_s") {
+  field(DESC, "Coil readback timeout")
+  field(VAL,  "$(COIL_TIMEOUT_S)")
+  field(EGU,  "s")
+  field(PINI, "YES")
+}
+record(ao, "$(P)config:imax_a") {
+  field(DESC, "|setpoint| ceiling, refused beyond")
+  field(VAL,  "$(IMAX_A)")
+  field(EGU,  "A")
+  field(PINI, "YES")
+}
+record(ao, "$(P)config:contact_settle_s") {
+  field(DESC, "Coil readback to output on (UNVERIFIED)")
+  field(VAL,  "$(CONTACT_SETTLE_S)")
+  field(EGU,  "s")
+  field(PREC, "1")
+  field(PINI, "YES")
+}

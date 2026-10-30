@@ -68,6 +68,11 @@ jobs:
         if: ${{ matrix.epics-target == 'linux-x86_64' }}
         run: tests/run-tests.sh ci_test
 
+      - name: Test the emqComposite program
+        # runs the SNL program on local stand-in records: a flip and a refusal
+        if: ${{ matrix.epics-target == 'linux-x86_64' }}
+        run: tests/run-emq-test.sh ci_test
+
       - name: Require released ibek-support on release tags
         # A released image pins ibek-support by commit hash only, so that commit
         # must be reachable from the ibek-support default branch or the image
@@ -193,3 +198,5 @@ jobs:
             ibek.ioc.schema.json
             versions.json
           generate_release_notes: true
+          # a CalVer beta (2026.10.1b6) is a pre-release, never "Latest"
+          prerelease: ${{ contains(github.ref_name, 'b') }}

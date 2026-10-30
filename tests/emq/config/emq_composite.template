@@ -1,0 +1,139 @@
+# One bipolar EMQ magnet of U_EMQTripletBipolar: the composite's records. The
+# SNL program emqComposite (one instance per magnet, in the image that runs
+# this IOC; README "The image") sequences them. Its unit is emqtest1-ps's chN,
+# and its relay is plctest1's coil COIL.
+#
+# Macros: P (this composite's prefix), CH (ch1..ch3), SUP (emqtest1-ps's
+#         prefix), PLC (plctest1's prefix), COIL (15..17), IMAX (|setpoint|
+#         ceiling, A), IHIHI (IMAX plus 1e-9: a put beyond it is refused),
+#         IDRVH (above IHIHI, so the clamp never brings a refused put back
+#         under it), NEG (the polarity map: the coil state that makes the
+#         current negative; UNVERIFIED), ASG (the setpoint's and output
+#         request's access group, one per channel: access.acf refuses a put
+#         while busy_CH reads 1), RASG (the reset's group, one per channel:
+#         access.acf refuses a reset unless state_CH reads "aborted").
+#
+# The signed setpoint. It has no OUT link: the program monitors it. A put
+# above IMAX or below -IMAX leaves the record INVALID (HIHI/LOLO), and the
+# PROGRAM refuses it ("refused: ... outside"), sending nothing: IVOA has no
+# effect on a record without an output link.
+record(ao, "$(P)current_limit_$(CH):SP") {
+  field(DESC, "Signed current setpoint")
+  field(EGU,  "A")
+  field(PREC, "3")
+  field(HOPR, "$(IMAX)")
+  field(LOPR, "-$(IMAX)")
+  field(DRVH, "$(IDRVH)")
+  field(DRVL, "-$(IDRVH)")
+  field(HIHI, "$(IHIHI)")
+  field(HHSV, "INVALID")
+  field(LOLO, "-$(IHIHI)")
+  field(LLSV, "INVALID")
+  field(IVOA, "Don't drive outputs")
+  field(MDEL, "-1")
+  field(ASG,  "$(ASG)")
+}
+
+# The operator's explicit output request. The program never turns an output
+# on by itself (a sign change leaves an output that was off off, and an abort
+# turns it off); this is how the operator turns it on, or off.
+# A longout, not a bo: a bo posts no monitor when the same value is put again,
+# and the program would never see a second "on". 1 = on, 0 = off.
+record(longout, "$(P)output_$(CH):SP") {
+  field(DESC, "Turn the unit's output on (1) / off (0)")
+  field(DRVL, "0")
+  field(DRVH, "1")
+  field(MDEL, "-1")
+  field(ASG,  "$(ASG)")
+}
+
+# Set by the program: 1 while a sequence runs, and while a channel is aborted
+# (cleared by reset). access.acf reads it to refuse setpoint puts.
+record(bo, "$(P)busy_$(CH)") {
+  field(DESC, "Sequence running or latched")
+  field(ZNAM, "free")
+  field(ONAM, "busy")
+  field(VAL,  "1")
+  field(PINI, "YES")
+}
+
+record(mbbo, "$(P)state_$(CH)") {
+  field(DESC, "Polarity sequence state")
+  field(ZRST, "idle")
+  field(ONST, "zeroing")
+  field(TWST, "output_off")
+  field(THST, "checking")
+  field(FRST, "switching")
+  field(FVST, "output_on")
+  field(SXST, "setting")
+  field(SVST, "aborted")
+  field(SVSV, "MAJOR")
+  field(EIST, "settling")
+  field(NIST, "output_change")
+  field(TEST, "relay_unknown")
+  field(TESV, "MAJOR")
+  field(VAL,  "7")
+  field(PINI, "YES")
+}
+
+record(stringout, "$(P)message_$(CH)") {
+  field(DESC, "Last action or abort reason")
+  field(VAL,  "starting")
+}
+
+# The operator's reset of a latched abort (access.acf: the operator only, and
+# only while state_CH reads "aborted"; the program also takes only a reset
+# made after the abort, and only once the output reads off).
+record(bo, "$(P)reset_$(CH)") {
+  field(DESC, "Clear an abort")
+  field(ZNAM, "")
+  field(ONAM, "reset")
+  field(ASG,  "$(RASG)")
+}
+
+# The polarity map, per channel (UNVERIFIED; README "Named values").
+record(longout, "$(P)config:negative_when_coil_$(CH)") {
+  field(DESC, "Coil state for negative (UNVERIFIED)")
+  field(VAL,  "$(NEG)")
+  field(PINI, "YES")
+}
+
+# Readbacks through CA links to the two IOCs (CP: on every change).
+record(calc, "$(P)polarity_sign_$(CH)") {
+  field(DESC, "+1 or -1 from the relay's coil")
+  field(INPA, "$(PLC)do_ch$(COIL) CP MS")
+  field(INPB, "$(P)config:negative_when_coil_$(CH) NPP")
+  field(CALC, "A=B?-1:1")
+  field(FLNK, "$(P)polarity_index_$(CH)")
+}
+
+record(calc, "$(P)polarity_index_$(CH)") {
+  field(INPA, "$(P)polarity_sign_$(CH) NPP MS")
+  field(CALC, "A<0")
+  field(FLNK, "$(P)polarity_$(CH)")
+}
+
+record(bi, "$(P)polarity_$(CH)") {
+  field(DESC, "Magnet polarity")
+  field(INP,  "$(P)polarity_index_$(CH) NPP MS")
+  field(ZNAM, "positive")
+  field(ONAM, "negative")
+}
+
+record(calc, "$(P)current_$(CH)") {
+  field(DESC, "Signed measured current")
+  field(INPA, "$(SUP)current_$(CH) CP MS")
+  field(INPB, "$(P)polarity_sign_$(CH) CP MS")
+  field(CALC, "A*B")
+  field(EGU,  "A")
+  field(PREC, "3")
+}
+
+record(calc, "$(P)current_limit_$(CH)") {
+  field(DESC, "Signed programmed current")
+  field(INPA, "$(SUP)current_limit_$(CH) CP MS")
+  field(INPB, "$(P)polarity_sign_$(CH) CP MS")
+  field(CALC, "A*B")
+  field(EGU,  "A")
+  field(PREC, "3")
+}

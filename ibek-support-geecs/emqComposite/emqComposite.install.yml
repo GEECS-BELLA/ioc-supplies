@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../ibek-support/_scripts/support_install_variables.json
+
+# The EMQ composite's SNL program. Its source is in this repository
+# (emqComposite/), copied to /epics/support/emqComposite by the Dockerfile
+# before ansible.sh runs, so the clone step finds it in place and builds it
+# (as ioc-motion's motorVelmex).
+module: emqComposite
+version: local
+
+dbds:
+  - emqComposite.dbd
+
+libs:
+  - emqComposite
+  - seq
+  - pv
