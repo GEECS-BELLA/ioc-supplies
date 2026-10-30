@@ -65,5 +65,18 @@ COPY --from=runtime_prep /assets /
 # install runtime system dependencies, collected from install.sh scripts
 RUN ibek support apt-install-runtime-packages
 
+# emq_composite (uid/gid 1990) is the user the EMQ composite IOC runs as
+# (geecs-epics emqtest1's compose `user:`), so that its CA links write under
+# a name of their own. plctest1 grants coils 15-17 to that name only, and
+# emqtest1-ps its setpoints. root, which every other container runs as, gets
+# neither. start.sh's `ibek runtime generate2` removes and recreates
+# /epics/runtime, so the user owns /epics itself (not recursively) and the
+# runtime folder. The image's default user stays root for every other
+# instance.
+RUN groupadd --system --gid 1990 emq_composite \
+    && useradd --system --uid 1990 --gid 1990 --no-create-home --shell /usr/sbin/nologin emq_composite \
+    && mkdir -p /epics/runtime \
+    && chown emq_composite:emq_composite /epics /epics/runtime
+
 # launch the startup script with stdio-expose to allow console connections
 CMD ["bash", "-c", "${IOC}/start.sh"]
